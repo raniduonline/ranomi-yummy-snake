@@ -122,7 +122,8 @@
         <input id="playerName" type="text" maxlength="14" placeholder="Your name" />
       </div>
       <div id="score">Score: 0</div>
-      <div id="lives">Lives: 3</div>
+      <div id="lives">Lives: 3 / 3</div>
+      <div id="level">Level: 1 / 10</div>
       <div id="status"></div>
 
       <div class="section-title">Leaderboard (local)</div>
@@ -131,7 +132,7 @@
       <div class="section-title">Controls</div>
       <div id="controls">
         Arrow keys or WASD to move.<br/>
-        Fewer, slower bots for easier practice.<br/>
+        10 levels: starts easy, gets harder as you score.<br/>
         Lure bot snakes into your body, then eat their remains.<br/>
         Avoid hitting any snake with your head.
       </div>
@@ -155,11 +156,15 @@
     const GRID_WIDTH = Math.floor(canvas.width / CELL_SIZE);
     const GRID_HEIGHT = Math.floor(canvas.height / CELL_SIZE);
 
-    const TICK_MS = 120;
+    const BASE_TICK_MS = 165;
+    const MIN_TICK_MS = 105;
     const INITIAL_PLAYER_LENGTH = 6;
-    const BOT_COUNT = 2;
+    const START_BOT_COUNT = 1;
+    const MAX_BOT_COUNT = 5;
     const FOOD_COUNT = 40;
     const MAX_LIVES = 3;
+    const MAX_LEVEL = 10;
+    const LEVEL_SCORE_STEP = 15;
 
     let lastTime = 0;
     let accTime = 0;
@@ -167,6 +172,7 @@
 
     const scoreEl = document.getElementById("score");
     const livesEl = document.getElementById("lives");
+    const levelEl = document.getElementById("level");
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
     const nameInput = document.getElementById("playerName");
@@ -294,6 +300,7 @@
     let foods = [];
     let score = 0;
     let lives = MAX_LIVES;
+    let level = 1;
     let playerDisplayName = "Player";
     let nextBotNumber = 1;
 
@@ -307,15 +314,45 @@
       return name;
     }
 
+    function levelForScore(scoreValue) {
+      return Math.min(MAX_LEVEL, 1 + Math.floor(scoreValue / LEVEL_SCORE_STEP));
+    }
+
+    function currentTickMs() {
+      const progress = (level - 1) / (MAX_LEVEL - 1);
+      return Math.round(BASE_TICK_MS - (BASE_TICK_MS - MIN_TICK_MS) * progress);
+    }
+
+    function targetBotCountForLevel() {
+      const progress = (level - 1) / (MAX_LEVEL - 1);
+      return Math.round(START_BOT_COUNT + (MAX_BOT_COUNT - START_BOT_COUNT) * progress);
+    }
+
+    function nextBotTurnCooldown() {
+      const progress = (level - 1) / (MAX_LEVEL - 1);
+      const min = Math.round(18 - 8 * progress);
+      const max = Math.round(34 - 14 * progress);
+      return min + Math.floor(Math.random() * Math.max(1, max - min + 1));
+    }
+
+    function updateLevelProgression() {
+      const newLevel = levelForScore(score);
+      if (newLevel === level) return;
+      level = newLevel;
+      updateLevelUI();
+      statusEl.textContent = "Level " + level + "! Snakes are getting tougher.";
+    }
+
     function initGame() {
       const startX = Math.floor(GRID_WIDTH / 2);
       const startY = Math.floor(GRID_HEIGHT / 2);
       playerDisplayName = getPlayerName();
       nextBotNumber = 1;
+      level = 1;
       player = new Snake(startX, startY, "#2ecc71", true, playerDisplayName);
 
       snakes = [player];
-      for (let i = 0; i < BOT_COUNT; i++) {
+      for (let i = 0; i < targetBotCountForLevel(); i++) {
         const pos = randomGridPos();
         const bot = new Snake(pos.x, pos.y, randomBotColor(), false, makeBotName());
         const dirs = [
@@ -338,9 +375,10 @@
       score = 0;
       lives = MAX_LIVES;
       gameOver = false;
-      statusEl.textContent = "GitHub Pages solo mode (easy): fewer, slower bots. Multiplayer needs a separate Node server.";
+      statusEl.textContent = "GitHub Pages solo mode: Level 1 / 10 starts easy, then gets harder.";
       updateScoreUI();
       updateLivesUI();
+      updateLevelUI();
       renderLeaderboard();
     }
 
@@ -375,13 +413,17 @@
     }
 
     function updateLivesUI() {
-      livesEl.textContent = "Lives: " + lives;
+      livesEl.textContent = "Lives: " + lives + " / " + MAX_LIVES;
+    }
+
+    function updateLevelUI() {
+      levelEl.textContent = "Level: " + level + " / " + MAX_LEVEL;
     }
 
     function respawnPlayer() {
       let pos = randomGridPos();
       let tries = 0;
-      while (isOccupied(pos.x, pos.y) && tries < 200) {
+      while (!canRespawnAt(pos.x, pos.y) && tries < 200) {
         pos = randomGridPos();
         tries++;
       }
@@ -398,6 +440,14 @@
       player.turnCooldown = 0;
     }
 
+    function canRespawnAt(x, y) {
+      for (let i = 0; i < INITIAL_PLAYER_LENGTH; i++) {
+        const sx = (x - i + GRID_WIDTH) % GRID_WIDTH;
+        if (isOccupied(sx, y)) return false;
+      }
+      return true;
+    }
+
     function gameLoop(timestamp) {
       if (!lastTime) lastTime = timestamp;
       const delta = timestamp - lastTime;
@@ -405,9 +455,10 @@
 
       if (!gameOver) {
         accTime += delta;
-        while (accTime >= TICK_MS) {
+        const tickMs = currentTickMs();
+        while (accTime >= tickMs) {
           updateGame();
-          accTime -= TICK_MS;
+          accTime -= tickMs;
         }
       }
 
@@ -433,7 +484,7 @@
         s.turnCooldown--;
         if (s.turnCooldown <= 0) {
           maybeTurnBot(s);
-          s.turnCooldown = 12 + Math.floor(Math.random() * 20);
+          s.turnCooldown = nextBotTurnCooldown();
         }
       }
 
@@ -452,6 +503,7 @@
             if (s.isPlayer) {
               score += f.value;
               updateScoreUI();
+              updateLevelProgression();
             }
             spawnFood(1);
           }
@@ -461,7 +513,7 @@
       handleCollisions();
 
       let botCount = snakes.filter(s => !s.isPlayer && s.alive).length;
-      while (botCount < BOT_COUNT) {
+      while (botCount < targetBotCountForLevel()) {
         const pos = randomGridPos();
         const bot = new Snake(pos.x, pos.y, randomBotColor(), false, makeBotName());
         const dirs = [
@@ -521,7 +573,7 @@
               return;
             }
 
-            statusEl.textContent = "Ouch. You lost a life. " + lives + " left.";
+            statusEl.textContent = "Ouch. You lost a life. " + lives + " left on level " + level + ".";
             respawnPlayer();
             return;
           }
@@ -565,7 +617,7 @@
     function drawGameOverOverlay() {
       ctx.save();
       ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
-      ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+      ctx.fillRect(0, canvas.height / 2 - 78, canvas.width, 156);
 
       ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
@@ -576,7 +628,8 @@
       ctx.fillStyle = "#f1fa8c";
       ctx.fillText("Final score: " + score, canvas.width / 2, canvas.height / 2 + 18);
       ctx.fillStyle = "#ffb86c";
-      ctx.fillText("Press R to restart (" + MAX_LIVES + " lives)", canvas.width / 2, canvas.height / 2 + 42);
+      ctx.fillText("Level reached: " + level + " / " + MAX_LEVEL, canvas.width / 2, canvas.height / 2 + 42);
+      ctx.fillText("Press R to restart (" + MAX_LIVES + " lives)", canvas.width / 2, canvas.height / 2 + 66);
       ctx.restore();
     }
 
