@@ -122,6 +122,7 @@
         <input id="playerName" type="text" maxlength="14" placeholder="Your name" />
       </div>
       <div id="score">Score: 0</div>
+      <div id="lives">Lives: 3</div>
       <div id="status"></div>
 
       <div class="section-title">Leaderboard (local)</div>
@@ -130,6 +131,7 @@
       <div class="section-title">Controls</div>
       <div id="controls">
         Arrow keys or WASD to move.<br/>
+        Fewer, slower bots for easier practice.<br/>
         Lure bot snakes into your body, then eat their remains.<br/>
         Avoid hitting any snake with your head.
       </div>
@@ -153,16 +155,18 @@
     const GRID_WIDTH = Math.floor(canvas.width / CELL_SIZE);
     const GRID_HEIGHT = Math.floor(canvas.height / CELL_SIZE);
 
-    const TICK_MS = 80;
+    const TICK_MS = 120;
     const INITIAL_PLAYER_LENGTH = 6;
-    const BOT_COUNT = 5;
+    const BOT_COUNT = 2;
     const FOOD_COUNT = 40;
+    const MAX_LIVES = 3;
 
     let lastTime = 0;
     let accTime = 0;
     let gameOver = false;
 
     const scoreEl = document.getElementById("score");
+    const livesEl = document.getElementById("lives");
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
     const nameInput = document.getElementById("playerName");
@@ -289,6 +293,7 @@
     let snakes = [];
     let foods = [];
     let score = 0;
+    let lives = MAX_LIVES;
     let playerDisplayName = "Player";
     let nextBotNumber = 1;
 
@@ -331,9 +336,11 @@
       }
 
       score = 0;
+      lives = MAX_LIVES;
       gameOver = false;
-      statusEl.textContent = "GitHub Pages mode: solo game. Multiplayer needs a separate Node server.";
+      statusEl.textContent = "GitHub Pages solo mode (easy): fewer, slower bots. Multiplayer needs a separate Node server.";
       updateScoreUI();
+      updateLivesUI();
       renderLeaderboard();
     }
 
@@ -365,6 +372,30 @@
 
     function updateScoreUI() {
       scoreEl.textContent = "Score: " + score;
+    }
+
+    function updateLivesUI() {
+      livesEl.textContent = "Lives: " + lives;
+    }
+
+    function respawnPlayer() {
+      let pos = randomGridPos();
+      let tries = 0;
+      while (isOccupied(pos.x, pos.y) && tries < 200) {
+        pos = randomGridPos();
+        tries++;
+      }
+
+      const segments = [];
+      for (let i = 0; i < INITIAL_PLAYER_LENGTH; i++) {
+        segments.push({ x: (pos.x - i + GRID_WIDTH) % GRID_WIDTH, y: pos.y });
+      }
+      player.segments = segments;
+      player.dir = { x: 1, y: 0 };
+      player.nextDir = { x: 1, y: 0 };
+      player.growAmount = 0;
+      player.alive = true;
+      player.turnCooldown = 0;
     }
 
     function gameLoop(timestamp) {
@@ -402,7 +433,7 @@
         s.turnCooldown--;
         if (s.turnCooldown <= 0) {
           maybeTurnBot(s);
-          s.turnCooldown = 6 + Math.floor(Math.random() * 12);
+          s.turnCooldown = 12 + Math.floor(Math.random() * 20);
         }
       }
 
@@ -479,10 +510,19 @@
         for (let i = startIndex; i < s.segments.length; i++) {
           const seg = s.segments[i];
           if (playerHead.x === seg.x && playerHead.y === seg.y) {
-            player.alive = false;
-            gameOver = true;
-            statusEl.textContent = "Game over. Your head hit a snake. Press R to play again.";
-            handleGameOverLeaderboard();
+            lives -= 1;
+            updateLivesUI();
+
+            if (lives <= 0) {
+              player.alive = false;
+              gameOver = true;
+              statusEl.textContent = "Game over. You are out of lives. Press R to play again.";
+              handleGameOverLeaderboard();
+              return;
+            }
+
+            statusEl.textContent = "Ouch. You lost a life. " + lives + " left.";
+            respawnPlayer();
             return;
           }
         }
@@ -536,7 +576,7 @@
       ctx.fillStyle = "#f1fa8c";
       ctx.fillText("Final score: " + score, canvas.width / 2, canvas.height / 2 + 18);
       ctx.fillStyle = "#ffb86c";
-      ctx.fillText("Press R to restart", canvas.width / 2, canvas.height / 2 + 42);
+      ctx.fillText("Press R to restart (" + MAX_LIVES + " lives)", canvas.width / 2, canvas.height / 2 + 42);
       ctx.restore();
     }
 
