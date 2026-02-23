@@ -54,6 +54,21 @@
       margin-bottom: 8px;
     }
 
+    #name-input {
+      margin-bottom: 8px;
+    }
+
+    #name-input input {
+      width: 100%;
+      padding: 4px 6px;
+      border-radius: 4px;
+      border: 1px solid #444;
+      background: #111525;
+      color: #f5f5f5;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+
     #status {
       font-size: 12px;
       color: #bbb;
@@ -99,10 +114,13 @@
   </style>
 </head>
 <body>
-  <div id="game-container">
-    <canvas id="game" width="800" height="600"></canvas>
-    <div id="ui">
+    <div id="game-container">
+      <canvas id="game" width="800" height="600"></canvas>
+      <div id="ui">
       <h1>Yummy Snake - Solo</h1>
+      <div id="name-input">
+        <input id="playerName" type="text" maxlength="14" placeholder="Your name" />
+      </div>
       <div id="score">Score: 0</div>
       <div id="status"></div>
 
@@ -145,9 +163,10 @@
     const scoreEl = document.getElementById("score");
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
+    const nameInput = document.getElementById("playerName");
 
     class Snake {
-      constructor(x, y, color, isPlayer) {
+      constructor(x, y, color, isPlayer, name) {
         this.segments = [];
         for (let i = 0; i < INITIAL_PLAYER_LENGTH; i++) {
           this.segments.push({ x: x - i, y: y });
@@ -159,6 +178,7 @@
         this.growAmount = 0;
         this.alive = true;
         this.turnCooldown = 0;
+        this.name = name || (isPlayer ? "Player" : "Bot");
       }
 
       setDirection(dx, dy) {
@@ -199,6 +219,33 @@
           }
           ctx.fillRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
         }
+        if (this.segments[0] && this.isPlayer) {
+          const head = this.segments[0];
+          ctx.strokeStyle = "#ffffff";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(head.x * CELL_SIZE + 0.5, head.y * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1);
+        }
+        ctx.restore();
+
+        const head = this.segments[0];
+        if (!head) return;
+        const label = (this.name || (this.isPlayer ? "Player" : "Bot")) + (this.isPlayer ? " (YOU)" : "");
+        const textX = head.x * CELL_SIZE + CELL_SIZE / 2;
+        const textY = Math.max(12, head.y * CELL_SIZE - 6);
+        ctx.save();
+        ctx.font = "12px system-ui";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        const textWidth = Math.min(180, Math.max(42, ctx.measureText(label).width + 10));
+        const boxX = textX - textWidth / 2;
+        const boxY = textY - 8;
+        ctx.fillStyle = this.isPlayer ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.45)";
+        ctx.strokeStyle = this.isPlayer ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.12)";
+        ctx.lineWidth = 1;
+        ctx.fillRect(boxX, boxY, textWidth, 16);
+        ctx.strokeRect(boxX, boxY, textWidth, 16);
+        ctx.fillStyle = this.isPlayer ? "#ffffff" : "#dfe8ff";
+        ctx.fillText(label, textX, textY);
         ctx.restore();
       }
 
@@ -240,16 +287,30 @@
     let snakes = [];
     let foods = [];
     let score = 0;
+    let playerDisplayName = "Player";
+    let nextBotNumber = 1;
+
+    function getPlayerName() {
+      return (nameInput.value || "").trim().slice(0, 14) || "Player";
+    }
+
+    function makeBotName() {
+      const name = "Bot " + nextBotNumber;
+      nextBotNumber += 1;
+      return name;
+    }
 
     function initGame() {
       const startX = Math.floor(GRID_WIDTH / 2);
       const startY = Math.floor(GRID_HEIGHT / 2);
-      player = new Snake(startX, startY, "#2ecc71", true);
+      playerDisplayName = getPlayerName();
+      nextBotNumber = 1;
+      player = new Snake(startX, startY, "#2ecc71", true, playerDisplayName);
 
       snakes = [player];
       for (let i = 0; i < BOT_COUNT; i++) {
         const pos = randomGridPos();
-        const bot = new Snake(pos.x, pos.y, randomBotColor(), false);
+        const bot = new Snake(pos.x, pos.y, randomBotColor(), false, makeBotName());
         const dirs = [
           { x: 1, y: 0 },
           { x: -1, y: 0 },
@@ -369,7 +430,7 @@
       let botCount = snakes.filter(s => !s.isPlayer && s.alive).length;
       while (botCount < BOT_COUNT) {
         const pos = randomGridPos();
-        const bot = new Snake(pos.x, pos.y, randomBotColor(), false);
+        const bot = new Snake(pos.x, pos.y, randomBotColor(), false, makeBotName());
         const dirs = [
           { x: 1, y: 0 },
           { x: -1, y: 0 },
@@ -497,6 +558,20 @@
 
     const LEADERBOARD_KEY = "yummySnakeSoloHighscores";
 
+    nameInput.addEventListener("input", () => {
+      playerDisplayName = getPlayerName();
+      if (player) player.name = playerDisplayName;
+    });
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
     function getLeaderboard() {
       try {
         const raw = localStorage.getItem(LEADERBOARD_KEY);
@@ -514,7 +589,7 @@
     }
 
     function handleGameOverLeaderboard() {
-      const name = "You";
+      const name = playerDisplayName || "Player";
       const entries = getLeaderboard();
       entries.push({ name, score });
       entries.sort((a, b) => b.score - a.score);
@@ -527,12 +602,13 @@
       const entries = getLeaderboard();
       let html = "<ol>";
       for (const e of entries) {
-        html += `<li><span class="name">${e.name}</span> - <span class="score">${e.score}</span></li>`;
+        html += `<li><span class="name">${escapeHtml(e.name)}</span> - <span class="score">${e.score}</span></li>`;
       }
       html += "</ol>";
       leaderboardEl.innerHTML = html;
     }
 
+    nameInput.value = playerDisplayName;
     initGame();
     requestAnimationFrame(gameLoop);
   </script>
