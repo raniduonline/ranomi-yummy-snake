@@ -199,8 +199,8 @@
     const GRID_WIDTH = Math.floor(canvas.width / CELL_SIZE);
     const GRID_HEIGHT = Math.floor(canvas.height / CELL_SIZE);
 
-    const BASE_TICK_MS = 165;
-    const MIN_TICK_MS = 105;
+    const BASE_TICK_MS = 210;
+    const MIN_TICK_MS = 145;
     const INITIAL_PLAYER_LENGTH = 6;
     const START_BOT_COUNT = 1;
     const MAX_BOT_COUNT = 5;
@@ -326,31 +326,64 @@
 
       draw(ctx) {
         if (!this.alive) return;
+        const centers = this.segments.map((seg) => ({
+          x: seg.x * CELL_SIZE + CELL_SIZE / 2,
+          y: seg.y * CELL_SIZE + CELL_SIZE / 2
+        }));
+
         ctx.save();
-        ctx.shadowBlur = this.isPlayer ? 14 : 10;
-        ctx.shadowColor = this.isPlayer ? "#ffffff" : this.glowColor;
-        for (let i = 0; i < this.segments.length; i++) {
-          const seg = this.segments[i];
-          const cx = seg.x * CELL_SIZE + CELL_SIZE / 2;
-          const cy = seg.y * CELL_SIZE + CELL_SIZE / 2;
-          const radius = i === 0 ? CELL_SIZE * 0.43 : CELL_SIZE * 0.38;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        // soft outer glow ribbon
+        for (let i = 0; i < centers.length - 1; i++) {
+          const a = centers[i];
+          const b = centers[i + 1];
           ctx.beginPath();
-          ctx.fillStyle = this.segmentColor(i);
-          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = this.segmentColor(i);
+          ctx.lineWidth = i === 0 ? CELL_SIZE * 0.9 : CELL_SIZE * 0.72;
+          ctx.shadowBlur = this.isPlayer ? 18 : 12;
+          ctx.shadowColor = this.segmentColor(i);
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+
+        // glossy body beads
+        for (let i = 0; i < centers.length; i++) {
+          const c = centers[i];
+          const radius = i === 0 ? CELL_SIZE * 0.44 : CELL_SIZE * 0.36;
+          const fill = this.segmentColor(i);
+          const grad = ctx.createRadialGradient(
+            c.x - radius * 0.2,
+            c.y - radius * 0.2,
+            radius * 0.15,
+            c.x,
+            c.y,
+            radius
+          );
+          grad.addColorStop(0, "rgba(255,255,255,0.35)");
+          grad.addColorStop(0.25, fill);
+          grad.addColorStop(1, "rgba(0,0,0,0.25)");
+
+          ctx.shadowBlur = i === 0 ? 20 : 10;
+          ctx.shadowColor = i === 0 ? this.glowColor : fill;
+          ctx.beginPath();
+          ctx.fillStyle = grad;
+          ctx.arc(c.x, c.y, radius, 0, Math.PI * 2);
           ctx.fill();
 
-          // glossy highlight
           ctx.beginPath();
           ctx.fillStyle = "rgba(255,255,255,0.16)";
-          ctx.arc(cx - radius * 0.25, cy - radius * 0.25, radius * 0.35, 0, Math.PI * 2);
+          ctx.arc(c.x - radius * 0.3, c.y - radius * 0.3, radius * 0.28, 0, Math.PI * 2);
           ctx.fill();
         }
         if (this.segments[0] && this.isPlayer) {
-          const head = this.segments[0];
+          const head = centers[0];
           ctx.strokeStyle = "#ffffff";
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.arc(head.x * CELL_SIZE + CELL_SIZE / 2, head.y * CELL_SIZE + CELL_SIZE / 2, CELL_SIZE * 0.48, 0, Math.PI * 2);
+          ctx.arc(head.x, head.y, CELL_SIZE * 0.48, 0, Math.PI * 2);
           ctx.stroke();
         }
         ctx.restore();
@@ -460,8 +493,8 @@
 
     function nextBotTurnCooldown() {
       const progress = (level - 1) / (MAX_LEVEL - 1);
-      const min = Math.round(18 - 8 * progress);
-      const max = Math.round(34 - 14 * progress);
+      const min = Math.round(24 - 8 * progress);
+      const max = Math.round(42 - 14 * progress);
       return min + Math.floor(Math.random() * Math.max(1, max - min + 1));
     }
 
@@ -741,23 +774,6 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.restore();
 
-      ctx.save();
-      ctx.strokeStyle = "rgba(120, 255, 200, 0.06)";
-      ctx.lineWidth = 1;
-      for (let x = 0; x <= GRID_WIDTH; x++) {
-        ctx.beginPath();
-        ctx.moveTo(x * CELL_SIZE + 0.5, 0);
-        ctx.lineTo(x * CELL_SIZE + 0.5, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y <= GRID_HEIGHT; y++) {
-        ctx.beginPath();
-        ctx.moveTo(0, y * CELL_SIZE + 0.5);
-        ctx.lineTo(canvas.width, y * CELL_SIZE + 0.5);
-        ctx.stroke();
-      }
-      ctx.restore();
-
       // Soft energy specks
       ctx.save();
       for (let i = 0; i < 18; i++) {
@@ -768,6 +784,28 @@
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
+      }
+      ctx.restore();
+
+      // Curved neon currents (less pixel-grid, more organic)
+      ctx.save();
+      ctx.globalAlpha = 0.16;
+      ctx.lineCap = "round";
+      for (let i = 0; i < 4; i++) {
+        const hue = i % 2 === 0 ? "rgba(85,255,190,0.28)" : "rgba(110,170,255,0.24)";
+        const yBase = 90 + i * 120 + ((score * 3 + level * 19 + i * 33) % 30);
+        ctx.strokeStyle = hue;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = hue;
+        ctx.lineWidth = 2 + i;
+        ctx.beginPath();
+        ctx.moveTo(-40, yBase);
+        ctx.bezierCurveTo(
+          canvas.width * 0.2, yBase - 55 + i * 6,
+          canvas.width * 0.65, yBase + 50 - i * 4,
+          canvas.width + 40, yBase - 20
+        );
+        ctx.stroke();
       }
       ctx.restore();
 
