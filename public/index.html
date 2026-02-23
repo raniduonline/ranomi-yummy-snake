@@ -100,6 +100,40 @@
       font-size: 13px;
     }
 
+    #join-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    #joinButton {
+      border: 1px solid #444;
+      background: #111525;
+      color: #f5f5f5;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    #joinButton:hover {
+      border-color: #8be9fd;
+      box-shadow: 0 0 6px rgba(139, 233, 253, 0.35);
+    }
+
+    #joinButton:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+
+    #meTag {
+      font-size: 12px;
+      color: #8be9fd;
+      min-height: 16px;
+      margin-bottom: 8px;
+    }
+
     /* Game modes section */
     #modes {
       display: flex;
@@ -259,6 +293,10 @@
       <div id="name-input">
         <input id="playerName" type="text" placeholder="Your name" maxlength="14" />
       </div>
+      <div id="join-row">
+        <button id="joinButton" type="button">Join Arena</button>
+      </div>
+      <div id="meTag">Not joined yet</div>
 
       <div class="section-title">Snake Style</div>
       <div id="skins">
@@ -340,12 +378,16 @@
     const statusEl = document.getElementById("status");
     const leaderboardEl = document.getElementById("leaderboard");
     const nameInput = document.getElementById("playerName");
+    const joinButton = document.getElementById("joinButton");
+    const meTagEl = document.getElementById("meTag");
     const skinOptions = Array.from(document.querySelectorAll(".skin-option"));
 
     let socket;
     let myId = null;
     let gameState = null;
     let grid = { w: 50, h: 37, cell: 16 };
+    let joined = false;
+    let wantsJoin = false;
 
     let selectedSkin = "pink";
 
@@ -355,23 +397,59 @@
         opt.classList.add("selected");
         selectedSkin = opt.getAttribute("data-skin") || "pink";
         if (socket && socket.connected) {
-          statusEl.textContent = "Skin will update next time you join. Refresh to rejoin.";
+          statusEl.textContent = joined
+            ? "Skin will update next time you join. Rejoin to apply."
+            : "Skin selected. Press Join Arena.";
         }
       });
     });
 
+    function currentName() {
+      return (nameInput.value || "").trim().slice(0, 14) || "Player";
+    }
+
+    function updateJoinUi() {
+      joinButton.textContent = joined ? "Rejoin Arena" : "Join Arena";
+      joinButton.disabled = !socket || !socket.connected;
+      if (!joined) {
+        meTagEl.textContent = "Not joined yet";
+      }
+    }
+
+    function joinArena() {
+      if (!socket || !socket.connected) {
+        statusEl.textContent = "Waiting for server connection...";
+        return;
+      }
+      wantsJoin = true;
+      joined = false;
+      myId = null;
+      const name = currentName();
+      socket.emit("join", { name, skin: selectedSkin });
+      statusEl.textContent = "Joining arena as " + name + "...";
+      meTagEl.textContent = "Joining...";
+      updateJoinUi();
+    }
+
     function connect() {
       socket = io();
+      updateJoinUi();
 
       socket.on("connect", () => {
-        statusEl.textContent = "Connected. Joining arena...";
-        const name = nameInput.value.trim() || "Player";
-        socket.emit("join", { name, skin: selectedSkin });
+        statusEl.textContent = "Connected. Choose a name and press Join Arena.";
+        updateJoinUi();
+        if (wantsJoin) {
+          joinArena();
+        }
       });
 
       socket.on("joined", (data) => {
         myId = data.id;
+        joined = true;
+        const joinedName = currentName();
         statusEl.textContent = "You are in. Use the keys to move.";
+        meTagEl.textContent = "You: " + joinedName;
+        updateJoinUi();
       });
 
       socket.on("state", (state) => {
@@ -382,12 +460,16 @@
       });
 
       socket.on("disconnect", () => {
+        joined = false;
+        myId = null;
         statusEl.textContent = "Disconnected from server.";
+        meTagEl.textContent = "Disconnected";
+        updateJoinUi();
       });
     }
 
     function sendDir(dx, dy) {
-      if (!socket || !socket.connected) return;
+      if (!socket || !socket.connected || !myId) return;
       socket.emit("dir", { x: dx, y: dy });
     }
 
@@ -404,10 +486,32 @@
     });
 
     nameInput.addEventListener("change", () => {
-      if (socket && socket.connected) {
-        statusEl.textContent = "Name updated. Refresh to join with new name.";
+      if (joined) {
+        statusEl.textContent = "Name updated. Rejoin to apply.";
+      } else if (socket && socket.connected) {
+        statusEl.textContent = "Name updated. Press Join Arena.";
       }
     });
+
+    nameInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        joinArena();
+      }
+    });
+
+    joinButton.addEventListener("click", () => {
+      joinArena();
+    });
+
+    function escapeHtml(text) {
+      return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
 
     function colorsForSkin(skinId, isHead, index) {
       switch (skinId) {
@@ -508,9 +612,10 @@
       for (const p of gameState.players) {
         const isMe = p.id === myId;
         const skinId = p.skin || "mint";
+        const head = p.segments[0];
 
         ctx.save();
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = isMe ? 14 : 8;
         ctx.shadowColor = isMe ? "#ffffff" : p.color;
         for (let i = 0; i < p.segments.length; i++) {
           const seg = p.segments[i];
@@ -520,7 +625,39 @@
           ctx.fillStyle = colorsForSkin(skinId, isHead, i);
           ctx.fillRect(px + 1, py + 1, cell - 2, cell - 2);
         }
+
+        if (head) {
+          const hx = head.x * cell;
+          const hy = head.y * cell;
+          if (isMe) {
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(hx + 0.5, hy + 0.5, cell - 1, cell - 1);
+          }
+        }
         ctx.restore();
+
+        if (head) {
+          const label = (p.name || "Player") + (isMe ? " (YOU)" : "");
+          const textX = head.x * cell + cell / 2;
+          const textY = Math.max(12, head.y * cell - 6);
+          ctx.save();
+          ctx.font = "12px system-ui";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const width = Math.min(180, Math.max(42, ctx.measureText(label).width + 10));
+          ctx.fillStyle = isMe ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.45)";
+          ctx.strokeStyle = isMe ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.12)";
+          const boxX = textX - width / 2;
+          const boxY = textY - 8;
+          ctx.beginPath();
+          ctx.roundRect(boxX, boxY, width, 16, 6);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = isMe ? "#ffffff" : "#dfe8ff";
+          ctx.fillText(label, textX, textY);
+          ctx.restore();
+        }
       }
     }
 
@@ -538,12 +675,13 @@
       for (const p of sorted) {
         const name = p.name || "Player";
         const label = p.id === myId ? name + " (you)" : name;
-        html += `<li><span class="name">${label}</span> - <span class="score">${p.score}</span></li>`;
+        html += `<li><span class="name">${escapeHtml(label)}</span> - <span class="score">${p.score}</span></li>`;
       }
       html += "</ol>";
       leaderboardEl.innerHTML = html;
     }
 
+    nameInput.value = "Player";
     connect();
   </script>
 </body>
