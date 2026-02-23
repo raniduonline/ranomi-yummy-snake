@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YummySnake.io - Multiplayer Notice</title>
+  <style>
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: #0c1020;
+      color: #f5f5f5;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    body {
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .card {
+      width: min(680px, 100%);
+      border: 1px solid #444;
+      border-radius: 12px;
+      background: rgba(10, 14, 28, 0.9);
+      box-shadow: 0 0 24px rgba(0, 0, 0, 0.5);
+      padding: 20px;
+    }
+    h1 {
+      margin: 0 0 10px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-size: 22px;
+    }
+    p {
+      color: #c9d0db;
+      line-height: 1.45;
+    }
+    code {
+      background: #111525;
+      border: 1px solid #333b52;
+      border-radius: 6px;
+      padding: 2px 6px;
+    }
+    a {
+      color: #8be9fd;
+    }
+    .actions {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      text-decoration: none;
+      color: #f5f5f5;
+      background: #111525;
+      border: 1px solid #444;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Online Arena Needs a Server</h1>
+    <p>
+      GitHub Pages can host static files only. Your multiplayer mode depends on a Node.js + Socket.IO server
+      (<code>server.js</code>), so it cannot run directly on GitHub Pages.
+    </p>
+    <p>
+      The solo mode is fully playable on GitHub Pages. For online multiplayer, deploy the server to a backend host
+      (for example Render/Railway/Fly.io) and point the web client at that server.
+    </p>
+    <div class="actions">
+      <a class="btn" href="./index.html">Play Solo (Pages)</a>
+      <a class="btn" href="./solo.html">Open Solo Practice</a>
+    </div>
+  </div>
+</body>
+</html>

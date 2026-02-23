@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>YummySnake.io - Play (GitHub Pages)</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0c1020;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #f5f5f5;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    #game-container {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    canvas {
+      border: 2px solid #444;
+      background: radial-gradient(circle at 30% 30%, #1b263b, #050816);
+      box-shadow: 0 0 25px rgba(0, 0, 0, 0.8);
+    }
+
+    #ui {
+      width: 260px;
+      font-size: 14px;
+    }
+
+    #ui h1 {
+      font-size: 20px;
+      margin: 0 0 8px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    #ui .section-title {
+      font-size: 13px;
+      margin-top: 12px;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #aaa;
+    }
+
+    #score {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    #status {
+      font-size: 12px;
+      color: #bbb;
+      min-height: 32px;
+    }
+
+    #leaderboard {
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 6px 8px;
+      background: rgba(0, 0, 0, 0.3);
+      font-size: 13px;
+    }
+
+    #leaderboard ol {
+      padding-left: 18px;
+      margin: 4px 0 0;
+    }
+
+    #leaderboard li span.name {
+      color: #f5f5f5;
+    }
+
+    #leaderboard li span.score {
+      color: #8be9fd;
+    }
+
+    #controls {
+      font-size: 12px;
+      color: #bbb;
+    }
+
+    #back-link {
+      font-size: 12px;
+      margin-top: 8px;
+    }
+
+    #restart-hint {
+      font-size: 12px;
+      margin-top: 4px;
+      color: #ffb86c;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game" width="800" height="600"></canvas>
+    <div id="ui">
+      <h1>YummySnake.io</h1>
+      <div id="score">Score: 0</div>
+      <div id="status"></div>
+
+      <div class="section-title">Leaderboard (local)</div>
+      <div id="leaderboard"></div>
+
+      <div class="section-title">Controls</div>
+      <div id="controls">
+        Arrow keys or WASD to move.<br/>
+        Lure bot snakes into your body, then eat their remains.<br/>
+        Avoid hitting any snake with your head.
+      </div>
+
+      <div id="restart-hint">
+        Press R to restart after game over.
+      </div>
+
+      <div class="section-title">Modes</div>
+      <div id="back-link">
+        <a href="./multiplayer.html">Online Arena (requires server)</a><br />
+        <a href="./solo.html">Open Solo Practice page</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+    const CELL_SIZE = 16;
+    const GRID_WIDTH = Math.floor(canvas.width / CELL_SIZE);
+    const GRID_HEIGHT = Math.floor(canvas.height / CELL_SIZE);
+
+    const TICK_MS = 80;
+    const INITIAL_PLAYER_LENGTH = 6;
+    const BOT_COUNT = 5;
+    const FOOD_COUNT = 40;
+
+    let lastTime = 0;
+    let accTime = 0;
+    let gameOver = false;
+
+    const scoreEl = document.getElementById("score");
+    const statusEl = document.getElementById("status");
+    const leaderboardEl = document.getElementById("leaderboard");
+
+    class Snake {
+      constructor(x, y, color, isPlayer) {
+        this.segments = [];
+        for (let i = 0; i < INITIAL_PLAYER_LENGTH; i++) {
+          this.segments.push({ x: x - i, y: y });
+        }
+        this.dir = { x: 1, y: 0 };
+        this.nextDir = { x: 1, y: 0 };
+        this.color = color;
+        this.isPlayer = isPlayer;
+        this.growAmount = 0;
+        this.alive = true;
+        this.turnCooldown = 0;
+      }
+
+      setDirection(dx, dy) {
+        if (dx === -this.dir.x && dy === -this.dir.y) {
+          return;
+        }
+        this.nextDir = { x: dx, y: dy };
+      }
+
+      update() {
+        if (!this.alive) return;
+        this.dir = { x: this.nextDir.x, y: this.nextDir.y };
+        const head = this.segments[0];
+        let newX = (head.x + this.dir.x + GRID_WIDTH) % GRID_WIDTH;
+        let newY = (head.y + this.dir.y + GRID_HEIGHT) % GRID_HEIGHT;
+        const newHead = { x: newX, y: newY };
+        this.segments.unshift(newHead);
+        if (this.growAmount > 0) {
+          this.growAmount--;
+        } else {
+          this.segments.pop();
+        }
+      }
+
+      draw(ctx) {
+        if (!this.alive) return;
+        ctx.save();
+        ctx.shadowBlur = 8;
+        ctx.shadowColor = this.isPlayer ? "#50fa7b" : this.color;
+        for (let i = 0; i < this.segments.length; i++) {
+          const seg = this.segments[i];
+          const px = seg.x * CELL_SIZE;
+          const py = seg.y * CELL_SIZE;
+          if (i === 0) {
+            ctx.fillStyle = this.isPlayer ? "#50fa7b" : "#ff5555";
+          } else {
+            ctx.fillStyle = this.isPlayer ? "#2ecc71" : this.color;
+          }
+          ctx.fillRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2);
+        }
+        ctx.restore();
+      }
+
+      head() {
+        return this.segments[0];
+      }
+    }
+
+    class Food {
+      constructor(x, y, value) {
+        this.x = x;
+        this.y = y;
+        this.value = value || 1;
+      }
+
+      draw(ctx) {
+        const px = this.x * CELL_SIZE + CELL_SIZE / 2;
+        const py = this.y * CELL_SIZE + CELL_SIZE / 2;
+        const r = CELL_SIZE * 0.3;
+        ctx.save();
+        ctx.beginPath();
+        ctx.fillStyle = this.value > 1 ? "#ff79c6" : "#f1fa8c";
+        ctx.shadowBlur = 6;
+        ctx.shadowColor = "#f1fa8c";
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function randomGridPos() {
+      return {
+        x: Math.floor(Math.random() * GRID_WIDTH),
+        y: Math.floor(Math.random() * GRID_HEIGHT)
+      };
+    }
+
+    let player;
+    let snakes = [];
+    let foods = [];
+    let score = 0;
+
+    function initGame() {
+      const startX = Math.floor(GRID_WIDTH / 2);
+      const startY = Math.floor(GRID_HEIGHT / 2);
+      player = new Snake(startX, startY, "#2ecc71", true);
+
+      snakes = [player];
+      for (let i = 0; i < BOT_COUNT; i++) {
+        const pos = randomGridPos();
+        const bot = new Snake(pos.x, pos.y, randomBotColor(), false);
+        const dirs = [
+          { x: 1, y: 0 },
+          { x: -1, y: 0 },
+          { x: 0, y: 1 },
+          { x: 0, y: -1 }
+        ];
+        const d = dirs[Math.floor(Math.random() * dirs.length)];
+        bot.dir = d;
+        bot.nextDir = d;
+        snakes.push(bot);
+      }
+
+      foods = [];
+      for (let i = 0; i < FOOD_COUNT; i++) {
+        spawnFood(1);
+      }
+
+      score = 0;
+      gameOver = false;
+      statusEl.textContent = "GitHub Pages mode: solo game. Multiplayer needs a separate Node server.";
+      updateScoreUI();
+      renderLeaderboard();
+    }
+
+    function randomBotColor() {
+      const palette = ["#eb4d4b", "#e67e22", "#9b59b6", "#3498db", "#1abc9c"];
+      return palette[Math.floor(Math.random() * palette.length)];
+    }
+
+    function spawnFood(value) {
+      let pos;
+      let tries = 0;
+      do {
+        pos = randomGridPos();
+        tries++;
+        if (tries > 200) break;
+      } while (isOccupied(pos.x, pos.y));
+      foods.push(new Food(pos.x, pos.y, value));
+    }
+
+    function isOccupied(x, y) {
+      for (const s of snakes) {
+        if (!s.alive) continue;
+        for (const seg of s.segments) {
+          if (seg.x === x && seg.y === y) return true;
+        }
+      }
+      return false;
+    }
+
+    function updateScoreUI() {
+      scoreEl.textContent = "Score: " + score;
+    }
+
+    function gameLoop(timestamp) {
+      if (!lastTime) lastTime = timestamp;
+      const delta = timestamp - lastTime;
+      lastTime = timestamp;
+
+      if (!gameOver) {
+        accTime += delta;
+        while (accTime >= TICK_MS) {
+          updateGame();
+          accTime -= TICK_MS;
+        }
+      }
+
+      drawGame();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function maybeTurnBot(bot) {
+      const dirs = [
+        { x: 1, y: 0 },
+        { x: -1, y: 0 },
+        { x: 0, y: 1 },
+        { x: 0, y: -1 }
+      ];
+      const safeDirs = dirs.filter(d => !(d.x === -bot.dir.x && d.y === -bot.dir.y));
+      const choice = safeDirs[Math.floor(Math.random() * safeDirs.length)];
+      bot.setDirection(choice.x, choice.y);
+    }
+
+    function updateGame() {
+      for (const s of snakes) {
+        if (!s.alive || s.isPlayer) continue;
+        s.turnCooldown--;
+        if (s.turnCooldown <= 0) {
+          maybeTurnBot(s);
+          s.turnCooldown = 6 + Math.floor(Math.random() * 12);
+        }
+      }
+
+      for (const s of snakes) {
+        s.update();
+      }
+
+      for (const s of snakes) {
+        if (!s.alive) continue;
+        const head = s.head();
+        for (let i = foods.length - 1; i >= 0; i--) {
+          const f = foods[i];
+          if (f.x === head.x && f.y === head.y) {
+            foods.splice(i, 1);
+            s.growAmount += f.value;
+            if (s.isPlayer) {
+              score += f.value;
+              updateScoreUI();
+            }
+            spawnFood(1);
+          }
+        }
+      }
+
+      handleCollisions();
+
+      let botCount = snakes.filter(s => !s.isPlayer && s.alive).length;
+      while (botCount < BOT_COUNT) {
+        const pos = randomGridPos();
+        const bot = new Snake(pos.x, pos.y, randomBotColor(), false);
+        const dirs = [
+          { x: 1, y: 0 },
+          { x: -1, y: 0 },
+          { x: 0, y: 1 },
+          { x: 0, y: -1 }
+        ];
+        const d = dirs[Math.floor(Math.random() * dirs.length)];
+        bot.dir = d;
+        bot.nextDir = d;
+        snakes.push(bot);
+        botCount++;
+      }
+    }
+
+    function handleCollisions() {
+      if (!player.alive) return;
+
+      const playerHead = player.head();
+
+      function snakeToFood(snake) {
+        for (let i = 0; i < snake.segments.length; i++) {
+          const seg = snake.segments[i];
+          const value = i === 0 ? 2 : 1;
+          foods.push(new Food(seg.x, seg.y, value));
+        }
+      }
+
+      for (const s of snakes) {
+        if (!s.alive || s.isPlayer) continue;
+        const head = s.head();
+        for (let i = 1; i < player.segments.length; i++) {
+          const seg = player.segments[i];
+          if (head.x === seg.x && head.y === seg.y) {
+            s.alive = false;
+            snakeToFood(s);
+            statusEl.textContent = "Nice. You trapped a snake. Eat the glowing bits.";
+          }
+        }
+      }
+
+      for (const s of snakes) {
+        if (!s.alive) continue;
+        const startIndex = s === player ? 1 : 0;
+        for (let i = startIndex; i < s.segments.length; i++) {
+          const seg = s.segments[i];
+          if (playerHead.x === seg.x && playerHead.y === seg.y) {
+            player.alive = false;
+            gameOver = true;
+            statusEl.textContent = "Game over. Your head hit a snake. Press R to play again.";
+            handleGameOverLeaderboard();
+            return;
+          }
+        }
+      }
+    }
+
+    function drawGame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      ctx.save();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x <= GRID_WIDTH; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * CELL_SIZE + 0.5, 0);
+        ctx.lineTo(x * CELL_SIZE + 0.5, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y <= GRID_HEIGHT; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * CELL_SIZE + 0.5);
+        ctx.lineTo(canvas.width, y * CELL_SIZE + 0.5);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      for (const f of foods) {
+        f.draw(ctx);
+      }
+
+      for (const s of snakes) {
+        s.draw(ctx);
+      }
+
+      if (gameOver) {
+        drawGameOverOverlay();
+      }
+    }
+
+    function drawGameOverOverlay() {
+      ctx.save();
+      ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.fillRect(0, canvas.height / 2 - 60, canvas.width, 120);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.font = "32px system-ui";
+      ctx.fillText("Game Over", canvas.width / 2, canvas.height / 2 - 10);
+
+      ctx.font = "18px system-ui";
+      ctx.fillStyle = "#f1fa8c";
+      ctx.fillText("Final score: " + score, canvas.width / 2, canvas.height / 2 + 18);
+      ctx.fillStyle = "#ffb86c";
+      ctx.fillText("Press R to restart", canvas.width / 2, canvas.height / 2 + 42);
+      ctx.restore();
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp" || e.key === "w" || e.key === "W") {
+        player.setDirection(0, -1);
+      } else if (e.key === "ArrowDown" || e.key === "s" || e.key === "S") {
+        player.setDirection(0, 1);
+      } else if (e.key === "ArrowLeft" || e.key === "a" || e.key === "A") {
+        player.setDirection(-1, 0);
+      } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
+        player.setDirection(1, 0);
+      } else if (e.key === "r" || e.key === "R") {
+        if (gameOver) {
+          lastTime = 0;
+          accTime = 0;
+          initGame();
+        }
+      }
+    });
+
+    const LEADERBOARD_KEY = "yummySnakeSoloHighscores";
+
+    function getLeaderboard() {
+      try {
+        const raw = localStorage.getItem(LEADERBOARD_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveLeaderboard(entries) {
+      localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
+    }
+
+    function handleGameOverLeaderboard() {
+      const name = "You";
+      const entries = getLeaderboard();
+      entries.push({ name, score });
+      entries.sort((a, b) => b.score - a.score);
+      const top = entries.slice(0, 10);
+      saveLeaderboard(top);
+      renderLeaderboard();
+    }
+
+    function renderLeaderboard() {
+      const entries = getLeaderboard();
+      let html = "<ol>";
+      for (const e of entries) {
+        html += `<li><span class="name">${e.name}</span> - <span class="score">${e.score}</span></li>`;
+      }
+      html += "</ol>";
+      leaderboardEl.innerHTML = html;
+    }
+
+    initGame();
+    requestAnimationFrame(gameLoop);
+  </script>
+</body>
+</html>
